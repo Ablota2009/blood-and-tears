@@ -1121,6 +1121,8 @@ body {
 
 /* --- MOBILE LOGIC (NO JS) --- */
 @media (max-width: 768px) {
+
+}
     .hamburger {
         display: flex;
     }
