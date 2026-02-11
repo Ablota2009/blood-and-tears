@@ -129,6 +129,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const modalPrice = document.getElementById('modalPrice');
   const modalDescription = document.getElementById('modalDescription');
   const modalAddToCart = document.getElementById('modalAddToCart');
+  // Timer to detect iframe/video load failure
+  let modalLoadTimer = null;
 
   function openModal(src, title, price, description) {
     if (!modal) return;
@@ -138,30 +140,55 @@ document.addEventListener('DOMContentLoaded', () => {
     if (modalDescription) modalDescription.textContent = description || '';
     // handle video source: MP4 uses <video>, otherwise iframe
     function handleVideoUnavailable() {
-      if (videoEl) { videoEl.style.display = 'none'; videoEl.pause(); videoEl.src = ''; }
-      if (iframe) iframe.style.display = 'none';
+      if (modalLoadTimer) { clearTimeout(modalLoadTimer); modalLoadTimer = null; }
+      if (videoEl) { videoEl.style.display = 'none'; try{ videoEl.pause(); }catch(e){} videoEl.src = ''; videoEl.onerror = null; videoEl.oncanplay = null; }
+      if (iframe) { iframe.style.display = 'none'; iframe.onload = null; }
       if (modalDescription) modalDescription.textContent = 'Preview not available.';
     }
 
-    if (src && src.toLowerCase().endsWith('.mp4')) {
-      if (iframe) iframe.style.display = 'none';
+    // Clear any previous handlers/timers
+    if (modalLoadTimer) { clearTimeout(modalLoadTimer); modalLoadTimer = null; }
+    if (!src) {
+      handleVideoUnavailable();
+      modal.classList.add('open');
+      modal.setAttribute('aria-hidden', 'false');
+      document.body.style.overflow = 'hidden';
+      return;
+    }
+
+    if (src.toLowerCase().endsWith('.mp4')) {
+      if (iframe) { iframe.style.display = 'none'; iframe.src = ''; iframe.onload = null; }
       if (videoEl) {
         videoEl.style.display = 'block';
         videoEl.src = src;
-        videoEl.play().catch(()=>{});
+        // clear previous handlers
+        videoEl.onerror = null;
+        videoEl.oncanplay = null;
 
-        // If the video element errors while loading, show a friendly message instead of leaving the UI broken.
+        // success handler
+        videoEl.oncanplay = () => {
+          if (modalLoadTimer) { clearTimeout(modalLoadTimer); modalLoadTimer = null; }
+        };
+
+        // failure handler
         videoEl.onerror = () => { handleVideoUnavailable(); };
+
+        // start a fallback timer: if it doesn't canplay within 6s, show unavailable
+        modalLoadTimer = setTimeout(() => { handleVideoUnavailable(); }, 6000);
+
+        videoEl.play().catch(()=>{});
       }
     } else {
-      if (videoEl) {
-        videoEl.pause();
-        videoEl.src = '';
-        videoEl.style.display = 'none';
-      }
+      if (videoEl) { videoEl.pause(); videoEl.src = ''; videoEl.style.display = 'none'; videoEl.onerror = null; videoEl.oncanplay = null; }
       if (iframe) {
         iframe.style.display = 'block';
+        // remove previous onload
+        iframe.onload = null;
         iframe.src = src + (src.includes('?') ? '&autoplay=1' : '?autoplay=1');
+
+        // If iframe loads successfully, clear the timer. If not loaded in 6s, mark unavailable.
+        iframe.onload = () => { if (modalLoadTimer) { clearTimeout(modalLoadTimer); modalLoadTimer = null; } };
+        modalLoadTimer = setTimeout(() => { handleVideoUnavailable(); }, 6000);
       }
     }
 
@@ -174,8 +201,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!modal) return;
     modal.classList.remove('open');
     modal.setAttribute('aria-hidden', 'true');
-    if (iframe) iframe.src = '';
-    if (videoEl) { videoEl.pause(); videoEl.src = ''; }
+    if (iframe) { iframe.src = ''; iframe.onload = null; }
+    if (videoEl) { try{ videoEl.pause(); }catch(e){} videoEl.src = ''; videoEl.onerror = null; videoEl.oncanplay = null; }
+    if (modalLoadTimer) { clearTimeout(modalLoadTimer); modalLoadTimer = null; }
     document.body.style.overflow = '';
   }
 
@@ -424,4 +452,3 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   })();
-
