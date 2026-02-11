@@ -61,14 +61,44 @@ if (prevBtn) {
 showSlide(currentSlide);
 
 // Hamburger menu toggle
-const burger = document.querySelector('.burger');
-const navLinks = document.querySelector('.nav-links');
-if (burger && navLinks) {
-  burger.addEventListener('click', () => {
-    burger.classList.toggle('active');
-    navLinks.classList.toggle('open');
+// Mobile hamburger: make the checkbox/label approach robust and add JS fallback
+(() => {
+  const checkbox = document.getElementById('menu-toggle');
+  const hamburger = document.querySelector('.hamburger');
+  const navMenu = document.querySelector('.nav-menu');
+
+  if (!navMenu) return;
+
+  // Toggle the menu (keeps checkbox in sync for CSS rules)
+  function toggleMenu(force) {
+    if (checkbox) {
+      if (typeof force === 'boolean') checkbox.checked = force;
+      else checkbox.checked = !checkbox.checked;
+    }
+    navMenu.classList.toggle('open', checkbox ? checkbox.checked : undefined);
+  }
+
+  // If label is clicked, the browser toggles the checkbox automatically, but
+  // add a click handler on the label for extra reliability and to sync classes.
+  if (hamburger) {
+    hamburger.addEventListener('click', (e) => {
+      e.preventDefault();
+      toggleMenu();
+    });
+  }
+
+  // Close menu when a nav link is clicked (mobile behaviour)
+  navMenu.querySelectorAll('a').forEach(a => {
+    a.addEventListener('click', () => {
+      toggleMenu(false);
+    });
   });
-}
+
+  // Close menu on escape
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') toggleMenu(false);
+  });
+})();
 
 // Contact form validation
 const contactForm = document.querySelector('.contact-form');
@@ -117,19 +147,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (iframe) iframe.style.display = 'none';
       if (videoEl) {
         videoEl.style.display = 'block';
-        // Try a lightweight HEAD request to verify the file exists before assigning it.
-        fetch(src, { method: 'HEAD' }).then(res => {
-          if (res.ok) {
-            videoEl.src = src;
-            videoEl.play().catch(()=>{});
-          } else {
-            handleVideoUnavailable();
-          }
-        }).catch(() => {
-          // Some servers may not support HEAD; fall back to try setting src but handle errors.
-          videoEl.src = src;
-          // If it errors, the error handler below will call the fallback.
-        });
+        videoEl.src = src;
+        videoEl.play().catch(()=>{});
 
         // If the video element errors while loading, show a friendly message instead of leaving the UI broken.
         videoEl.onerror = () => { handleVideoUnavailable(); };
@@ -173,6 +192,30 @@ document.addEventListener('DOMContentLoaded', () => {
       if (video) openModal(video, title, price, desc);
     });
   });
+
+  // Open PlayStation channel when any "Learn More" button is clicked
+  const playstationChannel = 'https://www.youtube.com/playstation/ps5';
+  document.querySelectorAll('button').forEach(btn => {
+    try{
+      if (btn.textContent && btn.textContent.trim().toLowerCase() === 'learn more'){
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          window.open(playstationChannel, '_blank');
+        });
+      }
+    }catch(e){}
+  });
+
+  // "Find out more" button should open PS5 video in the same video modal
+  const findOutBtn = document.querySelector('.btn-findout');
+  if (findOutBtn) {
+    findOutBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      // use YouTube embed URL (openModal will append autoplay=1)
+      const ps5VideoEmbed = 'https://www.youtube.com/embed/RkC0l4iekYo';
+      openModal(ps5VideoEmbed, 'PlayStation 5 Overview', '', '');
+    });
+  }
 
   if (closeBtn) closeBtn.addEventListener('click', closeModal);
   if (overlay) overlay.addEventListener('click', closeModal);
@@ -246,3 +289,139 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.key === 'Escape') closeDeviceModal();
   });
 });
+
+  // Google Sign-In (Identity Services) - simple client-side handling
+  (function(){
+    function parseJwt(token){
+      try{
+        const base64Url = token.split('.')[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c){
+          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+        }).join(''));
+        return JSON.parse(jsonPayload);
+      }catch(e){ return null; }
+    }
+
+    function handleCredentialResponse(response){
+      const user = parseJwt(response.credential);
+      const btn = document.getElementById('googleSignInBtn');
+      if (user && btn){
+        btn.textContent = user.name || user.email || 'Signed in';
+        btn.disabled = true;
+        let img = document.getElementById('userAvatar');
+        if (!img){
+          img = document.createElement('img');
+          img.id = 'userAvatar';
+          img.className = 'user-avatar';
+          img.style.width = '32px';
+          img.style.height = '32px';
+          img.style.borderRadius = '50%';
+          img.style.marginLeft = '8px';
+          btn.parentNode.appendChild(img);
+        }
+        img.src = user.picture || '';
+      } else {
+        alert('Sign-in failed or cancelled.');
+      }
+    }
+
+    function initGoogle(){
+      const btn = document.getElementById('googleSignInBtn');
+      if (!btn) return;
+      const clientId = btn.dataset.clientId;
+      if (!clientId || clientId === 'REPLACE_WITH_CLIENT_ID'){
+        btn.addEventListener('click', ()=>{
+          alert('Google Sign-In not configured. Set data-client-id on the button with your OAuth Client ID.');
+        });
+        return;
+      }
+
+      function initialize(){
+        google.accounts.id.initialize({
+          client_id: clientId,
+          callback: handleCredentialResponse
+        });
+        btn.addEventListener('click', ()=> google.accounts.id.prompt());
+      }
+
+      if (window.google && google.accounts && google.accounts.id){
+        initialize();
+      } else {
+        let attempts = 0;
+        const t = setInterval(()=>{
+          if (window.google && google.accounts && google.accounts.id){
+            clearInterval(t);
+            initialize();
+          } else if (++attempts > 20){
+            clearInterval(t);
+            btn.addEventListener('click', ()=> alert('Google Sign-In library failed to load.'));
+          }
+        },200);
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', initGoogle);
+  })();
+
+  // Custom Sign-in modal handling and Explore Games scroll
+  (function(){
+    function openModal(){
+      const m = document.getElementById('signinModal');
+      if (!m) return;
+      m.setAttribute('aria-hidden','false');
+    }
+    function closeModal(){
+      const m = document.getElementById('signinModal');
+      if (!m) return;
+      m.setAttribute('aria-hidden','true');
+    }
+
+    document.addEventListener('DOMContentLoaded', ()=>{
+      const signInBtn = document.getElementById('signInBtn');
+      const signinClose = document.getElementById('signinClose');
+      const signinOverlay = document.getElementById('signinOverlay');
+      const signinCancel = document.getElementById('signinCancel');
+      const signinForm = document.getElementById('signinForm');
+
+      if (signInBtn){
+        signInBtn.addEventListener('click', (e)=>{ e.preventDefault(); openModal(); });
+      }
+      if (signinClose) signinClose.addEventListener('click', closeModal);
+      if (signinOverlay) signinOverlay.addEventListener('click', closeModal);
+      if (signinCancel) signinCancel.addEventListener('click', closeModal);
+
+      if (signinForm){
+        signinForm.addEventListener('submit', (e)=>{
+          e.preventDefault();
+          const email = document.getElementById('signinEmail').value.trim();
+          const name = email.split('@')[0] || email;
+          // Simple client-side 'sign-in' (no backend)
+          localStorage.setItem('signedInUser', JSON.stringify({name, email}));
+          const btn = document.getElementById('signInBtn');
+          if (btn){ btn.textContent = 'Hi, ' + (name || 'Player'); btn.disabled = true; }
+          closeModal();
+        });
+      }
+
+      // If already signed in, show name
+      try{
+        const stored = JSON.parse(localStorage.getItem('signedInUser')||'null');
+        if (stored && stored.name){
+          const btn = document.getElementById('signInBtn');
+          if (btn){ btn.textContent = 'Hi, ' + stored.name; btn.disabled = true; }
+        }
+      }catch(e){}
+
+      // Explore Games scroll
+      const explore = document.getElementById('exploreBtn');
+      if (explore){
+        explore.addEventListener('click', (e)=>{
+          e.preventDefault();
+          const target = document.getElementById('games');
+          if (target) target.scrollIntoView({behavior:'smooth'});
+        });
+      }
+    });
+  })();
+
